@@ -26,75 +26,85 @@
 
 define(function (require, exports, module) {
     'use strict';
-    // Brackets modules
+    
+    // Brackets modules.
     var CommandManager      = brackets.getModule("command/CommandManager"),
+        DocumentManager     = brackets.getModule("document/DocumentManager"),
         EditorManager       = brackets.getModule("editor/EditorManager"),
         Menus               = brackets.getModule("command/Menus"),
-    
-    // Extension variables
-        AUTO_PAIRING        = 'auto.pairing.enable',
-        _auto_pairing       = false,
-        _pairs              = JSON.parse(require('text!pairs.json')),
-        _editor             = null,
-        _lastCharacter      = null,
 
-    // Extension functions
-        _alterPosition = function (position, value) {
-            return {
-                ch: position.ch + value,
-                line: position.line
+    // Extension variables.
+        AUTOMATCH           = 'automatch.pairs.toggle',
+        _enabled            = false,
+        _pairs              = JSON.parse(require('text!pairs.json')),
+        _document           = null,
+        _lastCharacter      = null;
+
+    // Extension functions.
+    
+    // Listener callback where all the magic happens.
+    function _handler(event, document, change) {
+        var token = change.text[0],
+            to = {
+                ch: change.from.ch + 1,
+                line: change.from.line
             };
-        },
-        _changeHandler = function (event, document, change) {
-            var token = change.text[0],
-                from = change.from,
-                to = _alterPosition(from, 1);
-            $(document).off('change', _changeHandler);
-            if (_lastCharacter === token) {
-                document.replaceRange('', from, to);
-                document._masterEditor.setCursorPos(to);
-            }
-            if (_pairs.hasOwnProperty(token)) {
-                document.replaceRange(_pairs[token], to);
-                document._masterEditor.setCursorPos(to);
-                _lastCharacter = _pairs[token];
-            } else {
-                _lastCharacter = null;
-            }
-            $(document).on('change', _changeHandler);
-        },
-        _addListener = function (document) {
-            $(document).on('change', _changeHandler);
-        },
-        _removeListener = function (document) {
-            $(document).off('change', _changeHandler);
-        },
-        _handler = function () {
-            _editor = _editor || EditorManager.getCurrentFullEditor();
-            _auto_pairing = !_auto_pairing;
-            CommandManager.get(AUTO_PAIRING).setChecked(_auto_pairing);
-            // Register listener.
-            if (_auto_pairing) {
-                _addListener(_editor.document);
-            } else {
-                _removeListener(_editor.document);
-            }
-        };
-    // Reset the listeners when the active editor change
+
+        // Remove listener while performing changes to avoid unwanted
+        // infinite loop effect.
+        $(document).off('change', _handler);
+        
+        // Cancel a change if a closing character is typed after an insertion.
+        if (_lastCharacter === token) {
+            document.replaceRange('', change.from, to);
+            document._masterEditor.setCursorPos(to);
+        }
+        
+        // Insert the matching closing character.
+        if (_pairs.hasOwnProperty(token)) {
+            document.replaceRange(_pairs[token], to);
+            document._masterEditor.setCursorPos(to);
+            _lastCharacter = _pairs[token];
+        } else {
+            _lastCharacter = null;
+        }
+        
+        // Business time.
+        $(document).on('change', _handler);
+    }
+    
+    // Toggle the extension, set the _document and register the listener.
+    function _toggle() {
+        _document = _document || DocumentManager.getCurrentDocument();
+        _enabled = !_enabled;
+        
+        // Set the new state for the menu item.
+        CommandManager.get(AUTOMATCH).setChecked(_enabled);
+        
+        // Register or remove listener depending on _enabled.
+        if (_enabled) {
+            $(_document).on('change', _handler);
+        } else {
+            $(_document).off('change', _handler);
+        }
+    }
+    
+    // Reset the listeners when the active editor change.
     $(EditorManager).on("activeEditorChange",
         function (event, current, previous) {
-            _editor = current;
-            if (_auto_pairing) {
-                _addListener(current.document);
-                _removeListener(previous.document);
+            if (_enabled) {
+                $(current.document).on('change', _handler);
+                $(previous.document).off('change', _handler);
             }
+            _document = current.document;
         });
+
     // Register command.
-    CommandManager.register("Enable Auto-Pairing", AUTO_PAIRING, _handler);
+    CommandManager.register("Enable Automatch Pairs", AUTOMATCH, _toggle);
 
     // Add command to View menu.
-    Menus.getMenu(Menus.AppMenuBar.VIEW_MENU).addMenuItem(AUTO_PAIRING);
+    Menus.getMenu(Menus.AppMenuBar.VIEW_MENU).addMenuItem(AUTOMATCH);
 
-    // Set the state in the menu.
-    CommandManager.get(AUTO_PAIRING).setChecked(_auto_pairing);
+    // Set the starting state for the menu item.
+    CommandManager.get(AUTOMATCH).setChecked(_enabled);
 });
