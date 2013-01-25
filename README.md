@@ -26,4 +26,5 @@ Todo
 ----
 
 - Wrap selected text in matching pairs.
+- Adapt behaviour of the insertion depending on the scope (especially in strings, comments).
 - Remove inserted closing character on deletion of the opening character of the pair.
