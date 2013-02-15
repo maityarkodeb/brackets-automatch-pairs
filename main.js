@@ -76,6 +76,7 @@ define(function (require, exports, module) {
     // Toggle the extension, set the _document and register the listener.
     function _toggle() {
         _document = _document || DocumentManager.getCurrentDocument();
+        _document.addRef();
         _enabled = !_enabled;
         
         // Set the new state for the menu item.
@@ -86,6 +87,8 @@ define(function (require, exports, module) {
             $(_document).on('change', _handler);
         } else {
             $(_document).off('change', _handler);
+            _document.releaseRef();
+            _document = null;
         }
     }
     
@@ -93,10 +96,17 @@ define(function (require, exports, module) {
     $(EditorManager).on("activeEditorChange",
         function (event, current, previous) {
             if (_enabled) {
-                $(current.document).on('change', _handler);
-                $(previous.document).off('change', _handler);
+                if (previous) {
+                    $(previous.document).off('change', _handler);
+                    previous.document.releaseRef();
+                    _document = null;
+                }
+                if (current) {
+                    $(current.document).on('change', _handler);
+                    _document = current.document;
+                    _document.addRef();
+                }
             }
-            _document = current.document;
         });
 
     // Register command.
