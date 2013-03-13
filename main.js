@@ -32,15 +32,44 @@ define(function (require, exports, module) {
         DocumentManager     = brackets.getModule("document/DocumentManager"),
         EditorManager       = brackets.getModule("editor/EditorManager"),
         Menus               = brackets.getModule("command/Menus"),
+        KeyEvent            = brackets.getModule("utils/KeyEvent"),
 
     // Extension variables.
         AUTOMATCH           = 'automatch.pairs.toggle',
-        _enabled            = false,
+        _enabled            = true,
         _pairs              = JSON.parse(require('text!pairs.json')),
-        _document           = null,
-        _lastCharacter      = null;
+        _matchStack         = [],
+        _deletedToken       = null;
 
     // Extension functions.
+     /**
+     * listener for cursor movements. This does three things: 1)clears the matchStack and the deletedToken 
+     * if the arrows keys are used to move the cursor, 2) remembers the deletedToken if backspace is pressed
+     * 3) clears the deletedToken in all other cases
+     *
+     */
+    function _cursorHandler(event, editor, keyEvent) {
+        if (keyEvent.type === "keydown") {
+            switch (keyEvent.which) {
+            case KeyEvent.DOM_VK_UP:
+            case KeyEvent.DOM_VK_DOWN:
+            case KeyEvent.DOM_VK_LEFT:
+            case KeyEvent.DOM_VK_RIGHT:
+                _matchStack = [];
+                _deletedToken = null;
+                break;
+            //if we hit the backspace, remember what was deleted
+            case KeyEvent.DOM_VK_BACK_SPACE:
+                var cursorPos = editor.getCursorPos(), from = {ch: cursorPos.ch - 1, line: cursorPos.line};
+                var to = { ch: from.ch + 1, line: from.line};
+                _deletedToken = editor.document.getRange(from, to);
+                break;
+            default:
+                _deletedToken = null;
+                break;
+            }
+        }
+    }
     
     // Listener callback where all the magic happens.
     function _handler(event, document, change) {
@@ -52,43 +81,55 @@ define(function (require, exports, module) {
 
         // Remove listener while performing changes to avoid unwanted
         // infinite loop effect.
-        $(document).off('change', _handler);
+        $(document).off("change", _handler);
         
-        // Cancel a change if a closing character is typed after an insertion.
-        if (_lastCharacter === token) {
+        // Cancel a change if a closing character is typed after an insertion otherwise
+        //Insert the matching closing character and push the token entered on the stack.
+        if (_matchStack[_matchStack.length - 1] === token) {
             document.replaceRange('', change.from, to);
             document._masterEditor.setCursorPos(to);
-        }
-        
-        // Insert the matching closing character.
-        if (_pairs.hasOwnProperty(token)) {
+            _matchStack.pop();
+        } else if (_pairs.hasOwnProperty(token)) {
             document.replaceRange(_pairs[token], to);
             document._masterEditor.setCursorPos(to);
-            _lastCharacter = _pairs[token];
-        } else {
-            _lastCharacter = null;
+            _matchStack.push(_pairs[token]);
         }
-        
+        //delete matching closing character if an opening character is deleted
+        if (change.origin === "+delete" && _matchStack.length &&
+                _pairs[_deletedToken] === _matchStack[_matchStack.length - 1]) {
+            document.replaceRange('', change.from, to);
+            document._masterEditor.setCursorPos(change.from);
+            _matchStack.pop();
+        }
         // Business time.
-        $(document).on('change', _handler);
+        $(document).on("change", _handler);
     }
     
-    // Toggle the extension, set the _document and register the listener.
+    //utility functions for registering and deregistering event handlers
+    function _registerHandlers(editor) {
+        $(editor).on("keyEvent", _cursorHandler);
+        $(editor.document).on("change", _handler);
+        editor.document.addRef();
+    }
+    
+    function _deregisterHandlers(editor) {
+        $(editor).off("keyEvent", _cursorHandler);
+        $(editor.document).off("change", _handler);
+        editor.document.releaseRef();
+    }
+    
+    // Toggle the extension, (de)register the listener.
     function _toggle() {
-        _document = _document || DocumentManager.getCurrentDocument();
-        _document.addRef();
+        var _editor =  EditorManager.getCurrentFullEditor();
         _enabled = !_enabled;
-        
         // Set the new state for the menu item.
         CommandManager.get(AUTOMATCH).setChecked(_enabled);
         
         // Register or remove listener depending on _enabled.
         if (_enabled) {
-            $(_document).on('change', _handler);
+            _registerHandlers(_editor);
         } else {
-            $(_document).off('change', _handler);
-            _document.releaseRef();
-            _document = null;
+            _deregisterHandlers(_editor);
         }
     }
     
@@ -97,14 +138,10 @@ define(function (require, exports, module) {
         function (event, current, previous) {
             if (_enabled) {
                 if (previous) {
-                    $(previous.document).off('change', _handler);
-                    previous.document.releaseRef();
-                    _document = null;
+                    _deregisterHandlers(previous);
                 }
                 if (current) {
-                    $(current.document).on('change', _handler);
-                    _document = current.document;
-                    _document.addRef();
+                    _registerHandlers(current);
                 }
             }
         });
