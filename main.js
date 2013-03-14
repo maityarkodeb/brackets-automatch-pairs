@@ -51,10 +51,14 @@ define(function (require, exports, module) {
     function _cursorHandler(event, editor, keyEvent) {
         if (keyEvent.type === "keydown") {
             switch (keyEvent.which) {
+            case KeyEvent.DOM_VK_RIGHT:
+            case KeyEvent.DOM_VK_DELETE:
+                _matchStack.pop();
+                _deletedToken = null;
+                break;
             case KeyEvent.DOM_VK_UP:
             case KeyEvent.DOM_VK_DOWN:
             case KeyEvent.DOM_VK_LEFT:
-            case KeyEvent.DOM_VK_RIGHT:
                 _matchStack = [];
                 _deletedToken = null;
                 break;
