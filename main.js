@@ -76,43 +76,45 @@ define(function (require, exports, module) {
     }
     
     // Listener callback where all the magic happens.
-    function _handler(event, document, change) {
-        var token = change.text[0],
-            to = {
-                ch: change.from.ch + 1,
-                line: change.from.line
-            };
+    function _handler(event, document, changes) {
+        if (!(changes instanceof Array)) {
+            changes = [changes];
+        }
 
-        // Remove listener while performing changes to avoid unwanted
-        // infinite loop effect.
-        $(document).off("change", _handler);
-        
-        // Cancel a change if a closing character is typed after an insertion otherwise
-        //Insert the matching closing character and push the token entered on the stack.
-        if (_matchStack[_matchStack.length - 1] === token) {
-            document.replaceRange('', change.from, to);
-            document._masterEditor.setCursorPos(to);
-            _matchStack.pop();
-        } else if (_pairs.hasOwnProperty(token)) {
-            document.replaceRange(_pairs[token], to);
-            document._masterEditor.setCursorPos(to);
-            _matchStack.push(_pairs[token]);
-        }
-        //delete matching closing character if an opening character is deleted
-        if (change.origin === "+delete" && _matchStack.length &&
-                _pairs[_deletedToken] === _matchStack[_matchStack.length - 1]) {
-            document.replaceRange('', change.from, to);
-            document._masterEditor.setCursorPos(change.from);
-            _matchStack.pop();
-        }
-        // Business time.
-        $(document).on("change", _handler);
+        changes.forEach(function (change) {
+            var token = change.text[0],
+                to = {
+                    ch: change.from.ch + 1,
+                    line: change.from.line
+                };
+                
+            // Cancel a change if a closing character is typed after an insertion otherwise
+            //Insert the matching closing character and push the token entered on the stack.
+            if (_matchStack[_matchStack.length - 1] === token) {
+                document.replaceRange('', change.from, to);
+                document._masterEditor.setCursorPos(to);
+                _matchStack.pop();
+            } else if (_pairs.hasOwnProperty(token)) {
+                document.replaceRange(_pairs[token], to);
+                document._masterEditor.setCursorPos(to);
+                _matchStack.push(_pairs[token]);
+            }
+            //delete matching closing character if an opening character is deleted
+            if (change.origin === "+delete" && _matchStack.length &&
+                    _pairs[_deletedToken] === _matchStack[_matchStack.length - 1]) {
+                document.replaceRange('', change.from, to);
+                document._masterEditor.setCursorPos(change.from);
+                _matchStack.pop();
+            }
+            // Business time.
+            $(document).one("change", _handler);
+        });
     }
     
     //utility functions for registering and deregistering event handlers
     function _registerHandlers(editor) {
         $(editor).on("keyEvent", _cursorHandler);
-        $(editor.document).on("change", _handler);
+        $(editor.document).one("change", _handler);
         editor.document.addRef();
     }
     
