@@ -1,3 +1,5 @@
+*Note:  This legacy extension will no longer be maintained due to the availability of "Auto Close Braces" in the Edit menu of Brackets 1.2.*
+
 brackets-automatch-pairs
 ========================
 
